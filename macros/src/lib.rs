@@ -48,3 +48,38 @@ pub fn debug_c_derive(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+#[proc_macro_derive(TryFromU8)]
+pub fn try_from_u8_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+
+    let variants = match input.data {
+        Data::Enum(data) => data.variants,
+        _ => panic!("TryFromU8 can only be used on enums"),
+    };
+
+    let arms = variants.iter().enumerate().map(|(index, v)| {
+        let variant_name = &v.ident;
+        let index = index as u8;
+
+        quote! {
+            #index => Ok(#name::#variant_name),
+        }
+    });
+
+    let expanded = quote! {
+        impl std::convert::TryFrom<u8> for #name {
+            type Error = ();
+
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                match value {
+                    #(#arms)*
+                    _ => Err(())
+                }
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
