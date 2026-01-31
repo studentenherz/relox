@@ -7,7 +7,7 @@ pub fn debug_c_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 
-    let mut prefix = "OP_".to_string();
+    let mut prefix = "OP".to_string();
 
     for attr in &input.attrs {
         if attr.path().is_ident("prefix") {
@@ -24,15 +24,21 @@ pub fn debug_c_derive(input: TokenStream) -> TokenStream {
 
     let variants = match input.data {
         Data::Enum(data) => data.variants,
-        _ => panic!("OpDebug can only be used on enums"),
+        _ => panic!("DebugC can only be used on enums"),
     };
 
     let arms = variants.iter().map(|v| {
         let variant_name = &v.ident;
-        let formatted_name = format!("{}{}", prefix, variant_name.to_string().to_uppercase());
+        let mut formatted_name = prefix.clone();
+        for c in variant_name.to_string().chars() {
+            if c.is_ascii_uppercase() {
+                formatted_name.push('_');
+            }
+            formatted_name.push(c.to_ascii_uppercase());
+        }
 
         quote! {
-            #name::#variant_name => write!(f, #formatted_name),
+            #name::#variant_name => f.pad(#formatted_name),
         }
     });
 

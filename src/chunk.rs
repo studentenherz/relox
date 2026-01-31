@@ -1,24 +1,14 @@
 use crate::array::Array;
 use crate::value::Value;
-use macros::DebugC;
+use macros::{DebugC, TryFromU8};
 
 #[repr(u8)]
-#[derive(DebugC)]
-#[prefix = "OP_"]
+#[derive(DebugC, TryFromU8)]
+#[prefix = "OP"]
 pub enum OpCode {
     Return,
     Constant,
-}
-
-impl TryFrom<u8> for OpCode {
-    type Error = ();
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Return),
-            1 => Ok(Self::Constant),
-            _ => Err(()),
-        }
-    }
+    ConstantLong,
 }
 
 pub struct Chunk {
@@ -54,9 +44,36 @@ impl Chunk {
         line + 1
     }
 
-    pub fn add_constant(&mut self, value: Value) -> usize {
+    fn write_bytes(&mut self, n: usize, mut number: usize, line: usize) {
+        assert!(n <= 8);
+
+        for _ in 0..n {
+            self.write((number & 0xff) as u8, line);
+            number >>= 1;
+        }
+    }
+
+    fn read_bytes<'a>(n: usize, iter: &mut impl Iterator<Item = (usize, &'a u8)>) -> usize {
+        assert!(n <= 8);
+        let mut number = 0usize;
+
+        for (i, (_, value)) in iter.take(n).enumerate() {
+            number |= (*value as usize) << i;
+        }
+
+        number
+    }
+
+    pub fn write_constant(&mut self, value: Value, line: usize) {
+        let constant_index = self.constants.len();
         self.constants.push(value);
-        self.constants.len() - 1
+        if constant_index < 256 {
+            self.write(OpCode::Constant as u8, line);
+            self.write(constant_index as u8, line);
+        } else {
+            self.write(OpCode::ConstantLong as u8, line);
+            self.write_bytes(3, constant_index, line);
+        }
     }
 
     fn simple_instruction(opcode: OpCode) {
@@ -68,9 +85,14 @@ impl Chunk {
         opcode: OpCode,
         iter: &mut impl Iterator<Item = (usize, &'a u8)>,
     ) {
-        let (_, constant) = unsafe { iter.next().unwrap_unchecked() };
-        let value = self.constants[*constant as usize];
-        println!("{:<16?} {:4} '{}'", opcode, constant, value);
+        let bytes = match opcode {
+            OpCode::Constant => 1,
+            OpCode::ConstantLong => 3,
+            _ => unreachable!(),
+        };
+        let index = Self::read_bytes(bytes, iter);
+        let value = self.constants[index];
+        println!("{:<16?} {:>4} '{}'", opcode, index, value);
     }
 
     pub fn disassemble(&self, name: &str) {
@@ -84,14 +106,14 @@ impl Chunk {
             if offset > 0 && line == prev_line {
                 print!("   | ");
             } else {
-                print!("{:4} ", line);
+                print!("{:>4} ", line);
             }
             prev_line = line;
             match OpCode::try_from(*instruction) {
                 Ok(opcode @ OpCode::Return) => {
                     Self::simple_instruction(opcode);
                 }
-                Ok(opcode @ OpCode::Constant) => {
+                Ok(opcode @ (OpCode::Constant | OpCode::ConstantLong)) => {
                     self.constant_instruction(opcode, &mut iter);
                 }
                 Err(_) => {

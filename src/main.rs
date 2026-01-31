@@ -8,10 +8,9 @@ mod value;
 
 fn main() {
     let mut chunk = Chunk::new();
-    for i in 1..10 {
-        let constant = chunk.add_constant(1.1 * i as Value);
-        chunk.write(OpCode::Constant as u8, i);
-        chunk.write(constant as u8, i);
+    for i in 1..258 {
+        let constant = 1.1 * i as Value;
+        chunk.write_constant(constant, i);
         chunk.write(OpCode::Return as u8, i);
     }
     chunk.disassemble("test chunk");
