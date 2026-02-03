@@ -14,7 +14,7 @@ pub enum OpCode {
 pub struct Chunk {
     instructions: Array<u8>,
     constants: Array<Value>,
-    lines: Array<usize>,
+    lines: Array<(usize, usize)>,
 }
 
 impl Chunk {
@@ -28,20 +28,25 @@ impl Chunk {
 
     pub fn write(&mut self, byte: u8, line: usize) {
         self.instructions.push(byte);
-        let line = line - 1;
-        if line < self.lines.len() {
-            self.lines[line] += 1;
-        } else {
-            self.lines.push(self.lines.last().unwrap_or(&0) + 1);
+        if let Some((last_line, count)) = self.lines.last_mut() {
+            if line == *last_line {
+                *count += 1;
+                return;
+            }
         }
+
+        let last_count = self.lines.last().unwrap_or(&(0, 0)).1;
+        self.lines.push((line, last_count + 1));
     }
 
     fn get_line(&self, offset: usize) -> usize {
-        let mut line = 0;
-        while offset >= self.lines[line] {
-            line += 1;
+        for &(line, count) in self.lines.iter() {
+            if offset < count {
+                return line;
+            }
         }
-        line + 1
+
+        unreachable!()
     }
 
     fn write_bytes<const N: usize>(&mut self, mut number: usize, line: usize) {
