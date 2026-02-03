@@ -44,21 +44,25 @@ impl Chunk {
         line + 1
     }
 
-    fn write_bytes(&mut self, n: usize, mut number: usize, line: usize) {
-        assert!(n <= 8);
+    fn write_bytes<const N: usize>(&mut self, mut number: usize, line: usize) {
+        const {
+            assert!(N <= 8);
+        }
 
-        for _ in 0..n {
+        for _ in 0..N {
             self.write((number & 0xff) as u8, line);
-            number >>= 1;
+            number >>= 8;
         }
     }
 
-    fn read_bytes<'a>(n: usize, iter: &mut impl Iterator<Item = (usize, &'a u8)>) -> usize {
-        assert!(n <= 8);
+    fn read_bytes<'a, const N: usize>(iter: &mut impl Iterator<Item = (usize, &'a u8)>) -> usize {
+        const {
+            assert!(N <= 8);
+        }
         let mut number = 0usize;
 
-        for (i, (_, value)) in iter.take(n).enumerate() {
-            number |= (*value as usize) << i;
+        for (i, (_, value)) in iter.take(N).enumerate() {
+            number |= (*value as usize) << (i * 8);
         }
 
         number
@@ -72,7 +76,7 @@ impl Chunk {
             self.write(constant_index as u8, line);
         } else {
             self.write(OpCode::ConstantLong as u8, line);
-            self.write_bytes(3, constant_index, line);
+            self.write_bytes::<3>(constant_index, line);
         }
     }
 
@@ -85,12 +89,11 @@ impl Chunk {
         opcode: OpCode,
         iter: &mut impl Iterator<Item = (usize, &'a u8)>,
     ) {
-        let bytes = match opcode {
-            OpCode::Constant => 1,
-            OpCode::ConstantLong => 3,
+        let index = match opcode {
+            OpCode::Constant => Self::read_bytes::<1>(iter),
+            OpCode::ConstantLong => Self::read_bytes::<3>(iter),
             _ => unreachable!(),
         };
-        let index = Self::read_bytes(bytes, iter);
         let value = self.constants[index];
         println!("{:<16?} {:>4} '{}'", opcode, index, value);
     }
