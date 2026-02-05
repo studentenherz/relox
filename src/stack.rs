@@ -43,6 +43,14 @@ impl<T, const C: usize> Stack<T, C> {
             None
         }
     }
+
+    pub fn top(&mut self) -> Option<&mut T> {
+        if self.size > 0 {
+            Some(unsafe { self.data[self.size - 1].assume_init_mut() })
+        } else {
+            None
+        }
+    }
 }
 
 impl<T: Debug, const C: usize> Debug for Stack<T, C> {

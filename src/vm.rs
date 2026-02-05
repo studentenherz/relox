@@ -57,8 +57,8 @@ impl<'a> Vm<'a> {
                     self.stack.push(value).expect("Stack overflow");
                 }
                 Instruction::Negate => {
-                    let value = self.stack.pop().expect("Stack underflow");
-                    self.stack.push(-value).expect("Stack overflow");
+                    let value = self.stack.top().expect("Stack underflow");
+                    *value = -*value;
                 }
                 Instruction::Unknown(byte) => {
                     eprintln!("Unknown opcode {}", byte);
