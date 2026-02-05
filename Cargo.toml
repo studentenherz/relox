@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 macros = { path = "./macros" }
+
+[features]
+tracing = []

@@ -9,6 +9,22 @@ pub enum OpCode {
     Return,
     Constant,
     ConstantLong,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
+}
+
+pub enum Instruction {
+    Return,
+    Constant(Value),
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
+    Unknown(u8),
 }
 
 pub struct Chunk {
@@ -37,16 +53,6 @@ impl Chunk {
 
         let last_count = self.lines.last().unwrap_or(&(0, 0)).1;
         self.lines.push((line, last_count + 1));
-    }
-
-    fn get_line(&self, offset: usize) -> usize {
-        for &(line, count) in self.lines.iter() {
-            if offset < count {
-                return line;
-            }
-        }
-
-        unreachable!()
     }
 
     fn write_bytes<const N: usize>(&mut self, mut number: usize, line: usize) {
@@ -84,50 +90,130 @@ impl Chunk {
             self.write_bytes::<3>(constant_index, line);
         }
     }
+}
 
-    fn simple_instruction(opcode: OpCode) {
-        println!("{:?}", opcode)
-    }
+pub struct ChunkIter<'a> {
+    chunk: &'a Chunk,
+    inner: std::iter::Enumerate<std::slice::Iter<'a, u8>>,
+}
 
-    fn constant_instruction<'a>(
-        &self,
-        opcode: OpCode,
-        iter: &mut impl Iterator<Item = (usize, &'a u8)>,
-    ) {
-        let index = match opcode {
-            OpCode::Constant => Self::read_bytes::<1>(iter),
-            OpCode::ConstantLong => Self::read_bytes::<3>(iter),
-            _ => unreachable!(),
+impl<'a> Iterator for ChunkIter<'a> {
+    type Item = (usize, Instruction);
+    fn next(&mut self) -> Option<Self::Item> {
+        let (offset, &byte) = self.inner.next()?;
+
+        let instruction = match OpCode::try_from(byte) {
+            Ok(OpCode::Return) => Instruction::Return,
+            Ok(OpCode::Constant) => {
+                let index = Chunk::read_bytes::<1>(&mut self.inner);
+                Instruction::Constant(self.chunk.constants[index])
+            }
+            Ok(OpCode::ConstantLong) => {
+                let index = Chunk::read_bytes::<3>(&mut self.inner);
+                Instruction::Constant(self.chunk.constants[index])
+            }
+            Ok(OpCode::Add) => Instruction::Add,
+            Ok(OpCode::Subtract) => Instruction::Subtract,
+            Ok(OpCode::Multiply) => Instruction::Multiply,
+            Ok(OpCode::Divide) => Instruction::Divide,
+            Ok(OpCode::Negate) => Instruction::Negate,
+            Err(_) => Instruction::Unknown(byte),
         };
-        let value = self.constants[index];
-        println!("{:<16?} {:>4} '{}'", opcode, index, value);
+
+        Some((offset, instruction))
+    }
+}
+
+impl<'a> ChunkIter<'a> {
+    pub fn has_next(&self) -> bool {
+        let mut peekable = self.inner.clone();
+        peekable.next().is_some()
+    }
+}
+
+impl<'a> Chunk {
+    pub fn iter(&'a self) -> ChunkIter<'a> {
+        ChunkIter {
+            chunk: self,
+            inner: self.instructions.iter().enumerate(),
+        }
+    }
+}
+
+#[cfg(feature = "tracing")]
+mod tracing {
+    use super::*;
+
+    impl Chunk {
+        fn get_line(&self, offset: usize) -> usize {
+            for &(line, count) in self.lines.iter() {
+                if offset < count {
+                    return line;
+                }
+            }
+
+            unreachable!()
+        }
+
+        fn simple_instruction(opcode: OpCode) {
+            println!("{:?}", opcode)
+        }
+
+        fn constant_instruction<'a>(
+            &self,
+            opcode: OpCode,
+            iter: &mut impl Iterator<Item = (usize, &'a u8)>,
+        ) {
+            let index = match opcode {
+                OpCode::Constant => Self::read_bytes::<1>(iter),
+                OpCode::ConstantLong => Self::read_bytes::<3>(iter),
+                _ => unreachable!(),
+            };
+            let value = self.constants[index];
+            println!("{:<16?} {:>4} '{}'", opcode, index, value);
+        }
+
+        pub fn disassemble_instruction<'a>(
+            &self,
+            iter: &mut impl Iterator<Item = (usize, &'a u8)>,
+        ) -> Option<()> {
+            if let Some((offset, opcode)) = iter.next() {
+                print!("{:04} ", offset);
+                let line = self.get_line(offset);
+                let prev_line = self.get_line(offset.saturating_sub(1));
+                if offset > 0 && line == prev_line {
+                    print!("   | ");
+                } else {
+                    print!("{:>4} ", line);
+                }
+                match OpCode::try_from(*opcode) {
+                    Ok(opcode @ (OpCode::Constant | OpCode::ConstantLong)) => {
+                        self.constant_instruction(opcode, iter);
+                    }
+                    Ok(opcode) => {
+                        Self::simple_instruction(opcode);
+                    }
+                    Err(_) => {
+                        println!("Unknown opcode {}", opcode);
+                    }
+                }
+                return Some(());
+            }
+            None
+        }
+
+        pub fn _disassemble(&self, name: &str) {
+            println!("== {} ==", name);
+
+            let mut iter = self.instructions.iter().enumerate();
+            while self.disassemble_instruction(&mut iter).is_some() {}
+        }
     }
 
-    pub fn disassemble(&self, name: &str) {
-        println!("== {} ==", name);
-
-        let mut iter = self.instructions.iter().enumerate();
-        let mut prev_line = 0;
-        while let Some((offset, instruction)) = iter.next() {
-            print!("{:04} ", offset);
-            let line = self.get_line(offset);
-            if offset > 0 && line == prev_line {
-                print!("   | ");
-            } else {
-                print!("{:>4} ", line);
-            }
-            prev_line = line;
-            match OpCode::try_from(*instruction) {
-                Ok(opcode @ OpCode::Return) => {
-                    Self::simple_instruction(opcode);
-                }
-                Ok(opcode @ (OpCode::Constant | OpCode::ConstantLong)) => {
-                    self.constant_instruction(opcode, &mut iter);
-                }
-                Err(_) => {
-                    println!("Unknown opcode {}", instruction);
-                }
-            }
+    impl<'a> ChunkIter<'a> {
+        pub fn disassemble_instruction(&'a self) {
+            let mut peekable = self.inner.clone();
+            self.chunk.disassemble_instruction(&mut peekable);
         }
     }
 }
