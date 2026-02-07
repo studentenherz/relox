@@ -44,11 +44,11 @@ impl Chunk {
 
     pub fn write(&mut self, byte: u8, line: usize) {
         self.instructions.push(byte);
-        if let Some((last_line, count)) = self.lines.last_mut() {
-            if line == *last_line {
-                *count += 1;
-                return;
-            }
+        if let Some((last_line, count)) = self.lines.last_mut()
+            && line == *last_line
+        {
+            *count += 1;
+            return;
         }
 
         let last_count = self.lines.last().unwrap_or(&(0, 0)).1;

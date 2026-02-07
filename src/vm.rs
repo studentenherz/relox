@@ -1,4 +1,6 @@
 use crate::chunk::{Chunk, ChunkIter, Instruction};
+use crate::compiler::compile;
+use crate::errors::{LoxError, LoxResult};
 use crate::stack::Stack;
 use crate::value::Value;
 
@@ -10,12 +12,6 @@ pub struct Vm<'a> {
     stack: Stack<Value, STACK_MAX>,
 }
 
-pub enum InterpretResult {
-    Ok,
-    // CompileError,
-    RuntimeError,
-}
-
 impl<'a> Vm<'a> {
     fn new(chunk: &'a Chunk) -> Self {
         Self {
@@ -25,15 +21,17 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn run_binary_operation(&mut self, op: fn(Value, Value) -> Value) {
-        let right = self.stack.pop().expect("Stack underflow");
-        let left = self.stack.pop().expect("Stack underflow");
+    fn run_binary_operation(&mut self, op: fn(Value, Value) -> Value) -> LoxResult<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
 
         let result = op(left, right);
-        self.stack.push(result).expect("Stack overflow");
+        self.stack.push(result)?;
+
+        Ok(())
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn run(&'a mut self) -> LoxResult<()> {
         while self.ip.has_next() {
             #[cfg(feature = "tracing")]
             {
@@ -45,33 +43,35 @@ impl<'a> Vm<'a> {
 
             match instruction {
                 Instruction::Return => {
-                    let value = self.stack.pop().expect("Stack underflow");
+                    let value = self.stack.pop()?;
                     println!("{}", value);
-                    return InterpretResult::Ok;
+                    return Ok(());
                 }
-                Instruction::Add => self.run_binary_operation(|left, right| left + right),
-                Instruction::Subtract => self.run_binary_operation(|left, right| left - right),
-                Instruction::Multiply => self.run_binary_operation(|left, right| left * right),
-                Instruction::Divide => self.run_binary_operation(|left, right| left / right),
+                Instruction::Add => self.run_binary_operation(|left, right| left + right)?,
+                Instruction::Subtract => self.run_binary_operation(|left, right| left - right)?,
+                Instruction::Multiply => self.run_binary_operation(|left, right| left * right)?,
+                Instruction::Divide => self.run_binary_operation(|left, right| left / right)?,
                 Instruction::Constant(value) => {
-                    self.stack.push(value).expect("Stack overflow");
+                    self.stack.push(value)?;
                 }
                 Instruction::Negate => {
-                    let value = self.stack.top().expect("Stack underflow");
+                    let value = self.stack.top()?;
                     *value = -*value;
                 }
                 Instruction::Unknown(byte) => {
-                    eprintln!("Unknown opcode {}", byte);
-                    return InterpretResult::RuntimeError;
+                    return Err(LoxError::runtime(format!("Unknown opcode {}", byte)));
                 }
             }
         }
 
-        InterpretResult::Ok
+        Ok(())
     }
 
-    pub fn interpret(chunk: &'a Chunk) -> InterpretResult {
-        let mut vm = Self::new(chunk);
-        vm.run()
+    pub fn interpret(source: &'a str) -> LoxResult<()> {
+        compile(&source);
+        Ok(())
+        // let chunk = Chunk::new();
+        // let mut vm = Self::new(&chunk);
+        // vm.run()
     }
 }
