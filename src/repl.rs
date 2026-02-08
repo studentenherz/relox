@@ -1,7 +1,6 @@
 use std::io::Write;
 
-use crate::errors::LoxResult;
-use crate::vm::Vm;
+use crate::interpreter::Interpreter;
 
 pub struct Repl {}
 
@@ -18,30 +17,35 @@ impl Repl {
         format!("Welcome to {name} version {version} by {authors}\nUse {quit} to quit")
     }
 
-    fn print_prompt() -> LoxResult<()> {
+    fn print_prompt() {
         print!("> ");
-        std::io::stdout().flush()?;
-
-        Ok(())
+        std::io::stdout()
+            .flush()
+            .expect("Couldn't flush the standard output");
     }
 
-    fn read_input() -> LoxResult<Option<String>> {
+    fn read_input() -> Option<String> {
         let mut buffer = String::new();
-        if std::io::stdin().read_line(&mut buffer)? == 0 {
-            return Ok(None);
+        if std::io::stdin()
+            .read_line(&mut buffer)
+            .expect("Couldn't read from the standard input")
+            == 0
+        {
+            return None;
         }
-        Ok(Some(buffer.trim().to_string()))
+        Some(buffer.trim().to_string())
     }
 
-    pub fn run(&mut self) -> LoxResult<()> {
+    pub fn run(&mut self) {
+        let mut interpreter = Interpreter::new();
         println!("{}", Self::welcome_message());
         loop {
-            Self::print_prompt()?;
-            if let Some(input) = Self::read_input()? {
-                Vm::interpret(&input)?;
+            Self::print_prompt();
+            if let Some(input) = Self::read_input() {
+                let _ = interpreter.interpret(&input);
             } else {
                 println!();
-                return Ok(());
+                return;
             }
         }
     }

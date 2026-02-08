@@ -1,6 +1,8 @@
+use crate::chunk::Chunk;
+use crate::errors::InterpretError;
 use crate::scanner::{Scanner, Token};
 
-pub fn compile(source: &str) {
+pub fn compile(source: &str) -> Result<Chunk, InterpretError> {
     let scanner = Scanner::new(source).skip_ignorable();
     let mut line = 0;
     for token_result in scanner {
@@ -12,11 +14,13 @@ pub fn compile(source: &str) {
                 } else {
                     print!("   | ");
                 }
-                println!("{:?} '{}'", kind, &source[span.pos..(span.pos + span.len)]);
+                println!("{:?} '{}'", kind, &span.slice);
             }
             Err(err) => {
                 eprintln!("{}", err);
             }
         }
     }
+
+    Ok(Chunk::new())
 }

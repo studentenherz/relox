@@ -1,82 +1,89 @@
 use std::error::Error;
 use std::fmt::Display;
+use std::process::exit;
 
-use crate::scanner::ScannerError;
+use crate::span::Span;
 use crate::stack::StackError;
 
 #[derive(Debug)]
-pub enum ErrorKind {
+pub struct CompileError<'a> {
+    reason: &'static str,
+    span: Span<'a>,
+}
+
+impl<'a> Display for CompileError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[line {}] Error at ", self.span.line)?;
+        if self.span.slice.is_empty() {
+            write!(f, "end")?;
+        } else {
+            write!(f, "'{}'", self.span.slice)?;
+        }
+
+        write!(f, ": {}", self.reason)
+    }
+}
+
+impl<'a> Error for CompileError<'a> {}
+
+impl<'a> CompileError<'a> {
+    pub fn new(span: Span<'a>, reason: &'static str) -> Self {
+        Self { reason, span }
+    }
+}
+
+#[derive(Debug)]
+pub struct RuntimeError {
+    reason: String,
+    line: Option<usize>,
+}
+
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(line) = self.line {
+            write!(f, "[line {}] ", line)?;
+        }
+        write!(f, "Error: {}", self.reason)
+    }
+}
+
+impl Error for RuntimeError {}
+
+impl RuntimeError {
+    pub fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            line: None,
+        }
+    }
+
+    pub fn with_line(self, line: usize) -> Self {
+        Self {
+            line: Some(line),
+            ..self
+        }
+    }
+}
+
+impl From<StackError> for RuntimeError {
+    fn from(value: StackError) -> Self {
+        Self {
+            reason: value.to_string(),
+            line: None,
+        }
+    }
+}
+
+pub enum InterpretError {
     Compile,
     Runtime,
 }
 
-#[derive(Debug)]
-pub struct LoxError {
-    kind: ErrorKind,
-    reason: String,
-}
-
-pub type LoxResult<T> = Result<T, LoxError>;
-
-impl Display for LoxError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.reason)
-    }
-}
-
-impl Error for LoxError {}
-
-impl From<std::io::Error> for LoxError {
-    fn from(value: std::io::Error) -> Self {
-        // let kind = value.kind();
-        // let reason  = match kind {
-        //     std::io::ErrorKind::NotFound => format(args)
-        // }
-
-        Self {
-            kind: ErrorKind::Compile,
-            reason: value.to_string(),
-        }
-    }
-}
-
-impl From<StackError> for LoxError {
-    fn from(value: StackError) -> Self {
-        Self {
-            kind: ErrorKind::Runtime,
-            reason: value.to_string(),
-        }
-    }
-}
-
-impl From<ScannerError> for LoxError {
-    fn from(value: ScannerError) -> Self {
-        Self {
-            kind: ErrorKind::Runtime,
-            reason: value.to_string(),
-        }
-    }
-}
-
-impl LoxError {
-    pub fn compile(reason: impl Into<String>) -> Self {
-        Self {
-            kind: ErrorKind::Compile,
-            reason: reason.into(),
-        }
-    }
-
-    pub fn runtime(reason: impl Into<String>) -> Self {
-        Self {
-            kind: ErrorKind::Runtime,
-            reason: reason.into(),
-        }
-    }
-
+impl InterpretError {
     pub fn exit(&self) {
-        match self.kind {
-            ErrorKind::Compile => std::process::exit(65),
-            ErrorKind::Runtime => std::process::exit(70),
+        match self {
+            Self::Compile => exit(65),
+            Self::Runtime => exit(70),
         }
     }
 }

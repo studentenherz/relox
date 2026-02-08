@@ -90,15 +90,26 @@ impl Chunk {
             self.write_bytes::<3>(constant_index, line);
         }
     }
+
+    pub fn get_line(&self, offset: usize) -> usize {
+        for &(line, count) in self.lines.iter() {
+            if offset < count {
+                return line;
+            }
+        }
+
+        unreachable!()
+    }
 }
 
 pub struct ChunkIter<'a> {
     chunk: &'a Chunk,
     inner: std::iter::Enumerate<std::slice::Iter<'a, u8>>,
+    offset: usize,
 }
 
 impl<'a> Iterator for ChunkIter<'a> {
-    type Item = (usize, Instruction);
+    type Item = Instruction;
     fn next(&mut self) -> Option<Self::Item> {
         let (offset, &byte) = self.inner.next()?;
 
@@ -120,7 +131,8 @@ impl<'a> Iterator for ChunkIter<'a> {
             Err(_) => Instruction::Unknown(byte),
         };
 
-        Some((offset, instruction))
+        self.offset = offset;
+        Some(instruction)
     }
 }
 
@@ -129,6 +141,10 @@ impl<'a> ChunkIter<'a> {
         let mut peekable = self.inner.clone();
         peekable.next().is_some()
     }
+
+    pub fn line(&self) -> usize {
+        self.chunk.get_line(self.offset)
+    }
 }
 
 impl<'a> Chunk {
@@ -136,6 +152,7 @@ impl<'a> Chunk {
         ChunkIter {
             chunk: self,
             inner: self.instructions.iter().enumerate(),
+            offset: 0,
         }
     }
 }
@@ -145,16 +162,6 @@ mod tracing {
     use super::*;
 
     impl Chunk {
-        fn get_line(&self, offset: usize) -> usize {
-            for &(line, count) in self.lines.iter() {
-                if offset < count {
-                    return line;
-                }
-            }
-
-            unreachable!()
-        }
-
         fn simple_instruction(opcode: OpCode) {
             println!("{:?}", opcode)
         }

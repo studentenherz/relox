@@ -1,17 +1,12 @@
-use macros::DebugC;
-use std::fmt::Display;
 use std::str::Chars;
 
-pub struct Span {
-    pub pos: usize,
-    pub col: usize,
-    pub len: usize,
-    pub line: usize,
-}
+use crate::errors::CompileError;
+use crate::span::Span;
+use macros::DebugC;
 
-pub struct Token {
+pub struct Token<'a> {
     pub kind: TokenKind,
-    pub span: Span,
+    pub span: Span<'a>,
 }
 
 #[derive(DebugC)]
@@ -47,9 +42,7 @@ pub enum TokenKind {
 
     // Keywords
     And,
-    Break,
     Class,
-    Continue,
     Else,
     False,
     Fun,
@@ -73,15 +66,10 @@ pub enum TokenKind {
     Unknown,
 }
 
-pub struct ScannerError {
-    reason: String,
-    span: Span,
-}
-
 const EOF_CHAR: char = '\0';
 
 pub struct Scanner<'a> {
-    skip_ignorable: bool,
+    input: &'a str,
     iter: Chars<'a>,
     line: usize,
     prev: char,
@@ -90,12 +78,14 @@ pub struct Scanner<'a> {
     start_line: usize,
     start_pos: usize,
     start_col: usize,
+    skip_ignorable: bool,
 }
 
 impl<'a> Scanner<'a> {
     pub fn new(input: &'a str) -> Self {
         let iter = input.chars();
         Self {
+            input,
             iter,
             prev: EOF_CHAR,
             line: 1,
@@ -138,29 +128,25 @@ impl<'a> Scanner<'a> {
     }
 
     fn second_matches(&mut self, expected: char) -> bool {
-        if let Some(second_char) = self.peek_second() {
-            if second_char == expected {
-                return true;
-            }
+        if let Some(second_char) = self.peek_second()
+            && second_char == expected
+        {
+            return true;
         }
 
         false
     }
 
-    fn span(&self) -> Span {
+    fn span(&self) -> Span<'a> {
         Span {
-            pos: self.start_pos,
-            col: self.start_pos,
-            len: self.pos - self.start_pos,
+            // col: self.start_col,
             line: self.start_line,
+            slice: &self.input[self.start_pos..self.pos],
         }
     }
 
-    fn error(&self, reason: impl Into<String>) -> ScannerError {
-        ScannerError {
-            reason: reason.into(),
-            span: self.span(),
-        }
+    fn error(&self, reason: &'static str) -> CompileError<'a> {
+        CompileError::new(self.span(), reason)
     }
 
     fn is_alpha(c: char) -> bool {
@@ -168,10 +154,10 @@ impl<'a> Scanner<'a> {
     }
 
     fn is_alphanumeric(c: char) -> bool {
-        Self::is_alpha(c) || c.is_digit(10)
+        Self::is_alpha(c) || c.is_ascii_digit()
     }
 
-    fn comment_or_slash(&mut self) -> Result<TokenKind, ScannerError> {
+    fn comment_or_slash(&mut self) -> Result<TokenKind, CompileError<'a>> {
         if self.second_matches('/') {
             self.bump();
             self.bump();
@@ -244,7 +230,7 @@ impl<'a> Scanner<'a> {
     fn keyword_or_ident(&mut self) -> TokenKind {
         match unsafe { self.peek_first().unwrap_unchecked() } {
             'a' => self.check_word("nd", TokenKind::And),
-            'c' => self.check_word("ontinue", TokenKind::Continue),
+            'c' => self.check_word("lass", TokenKind::Class),
             'e' => self.check_word("lse", TokenKind::Else),
             'f' => {
                 self.bump();
@@ -252,7 +238,7 @@ impl<'a> Scanner<'a> {
                     Some('a') => self.check_word("lse", TokenKind::False),
                     Some('o') => self.check_word("r", TokenKind::For),
                     Some('u') => self.check_word("n", TokenKind::Fun),
-                    _ => return self.ident(),
+                    _ => self.ident(),
                 }
             }
             'i' => self.check_word("f", TokenKind::If),
@@ -266,7 +252,7 @@ impl<'a> Scanner<'a> {
                 match self.peek_first() {
                     Some('h') => self.check_word("is", TokenKind::This),
                     Some('r') => self.check_word("ue", TokenKind::True),
-                    _ => return self.ident(),
+                    _ => self.ident(),
                 }
             }
             'v' => self.check_word("ar", TokenKind::Var),
@@ -280,21 +266,21 @@ impl<'a> Scanner<'a> {
         let mut number = String::new();
 
         while let Some(c) = self.peek_first() {
-            if c.is_digit(10) {
+            if c.is_ascii_digit() {
                 number.push(c);
                 self.bump();
                 continue;
             }
 
-            if c == '.' && !has_dot {
-                if let Some(c2) = self.peek_second() {
-                    if c2.is_digit(10) {
-                        has_dot = true;
-                        number.push(c);
-                        self.bump();
-                        continue;
-                    }
-                }
+            if c == '.'
+                && !has_dot
+                && let Some(c2) = self.peek_second()
+                && c2.is_ascii_digit()
+            {
+                has_dot = true;
+                number.push(c);
+                self.bump();
+                continue;
             }
 
             break;
@@ -303,7 +289,7 @@ impl<'a> Scanner<'a> {
         TokenKind::Number
     }
 
-    fn string(&mut self) -> Result<TokenKind, ScannerError> {
+    fn string(&mut self) -> Result<TokenKind, CompileError<'a>> {
         self.bump();
         let mut escaped = false;
         self.eat_while(move |c| {
@@ -313,7 +299,7 @@ impl<'a> Scanner<'a> {
         });
 
         if self.peek_first() != Some('"') {
-            return Err(self.error("Unterminated string.".to_string()));
+            return Err(self.error("Unterminated string."));
         }
 
         self.bump();
@@ -329,7 +315,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn advance_token(&mut self, first_char: char) -> Result<Token, ScannerError> {
+    fn advance_token(&mut self, first_char: char) -> Result<Token<'a>, CompileError<'a>> {
         self.start_pos = self.pos;
         self.start_col = self.col;
         self.start_line = self.line;
@@ -384,7 +370,7 @@ impl<'a> Scanner<'a> {
             TokenKind::Unknown => match first_char {
                 '"' => self.string()?,
                 '/' => self.comment_or_slash()?,
-                c if c.is_digit(10) => self.number(),
+                c if c.is_ascii_digit() => self.number(),
                 c if Self::is_alpha(c) => self.keyword_or_ident(),
                 c if c.is_ascii_whitespace() => {
                     self.eat_while(|c| c.is_ascii_whitespace());
@@ -409,7 +395,7 @@ impl<'a> Scanner<'a> {
 }
 
 impl<'a> Iterator for Scanner<'a> {
-    type Item = Result<Token, ScannerError>;
+    type Item = Result<Token<'a>, CompileError<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.peek_first() {
@@ -431,11 +417,5 @@ impl<'a> Iterator for Scanner<'a> {
                 }
             }
         }
-    }
-}
-
-impl Display for ScannerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.reason)
     }
 }

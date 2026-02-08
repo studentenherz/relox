@@ -71,7 +71,7 @@ impl<T> Array<T> {
 impl<T> Drop for Array<T> {
     fn drop(&mut self) {
         if self.cap != 0 {
-            while let Some(_) = self.pop() {}
+            while self.pop().is_some() {}
             let layout = Layout::array::<T>(self.cap).unwrap();
             unsafe {
                 alloc::dealloc(self.ptr.as_ptr() as *mut u8, layout);
@@ -83,12 +83,12 @@ impl<T> Drop for Array<T> {
 impl<T> Deref for Array<T> {
     type Target = [T];
     fn deref(&self) -> &Self::Target {
-        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr() as *mut T, self.len) }
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
 
 impl<T> DerefMut for Array<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut T, self.len) }
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 }
