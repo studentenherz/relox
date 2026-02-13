@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Expr, Lit, Meta, parse_macro_input};
+use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, parse_macro_input};
 
 #[proc_macro_derive(DebugC, attributes(prefix))]
 pub fn debug_c_derive(input: TokenStream) -> TokenStream {
@@ -37,8 +37,22 @@ pub fn debug_c_derive(input: TokenStream) -> TokenStream {
             formatted_name.push(c.to_ascii_uppercase());
         }
 
-        quote! {
-            #name::#variant_name => f.pad(#formatted_name),
+        match &v.fields {
+            Fields::Unit => {
+                quote! {
+                    #name::#variant_name => f.pad(#formatted_name),
+                }
+            }
+            Fields::Unnamed(_) => {
+                quote! {
+                    #name::#variant_name(..) => f.pad(#formatted_name),
+                }
+            }
+            Fields::Named(_) => {
+                quote! {
+                    #name::#variant_name { .. } => f.pad(#formatted_name),
+                }
+            }
         }
     });
 
