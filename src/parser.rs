@@ -112,29 +112,45 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn current(&self) -> &Token {
-        unsafe { &self.current.assume_init_ref() }
+    /// # Safety
+    ///
+    /// Must only be called after `advance()` has been called at least once.
+    unsafe fn current(&self) -> &Token {
+        unsafe { self.current.assume_init_ref() }
     }
 
-    fn previous(&self) -> &Token {
-        unsafe { &self.previous.assume_init_ref() }
+    /// # Safety
+    ///
+    /// Must only be called after `advance()` has been called at least twice.
+    unsafe fn previous(&self) -> &Token {
+        unsafe { self.previous.assume_init_ref() }
     }
 
-    fn emit_byte(&mut self, byte: impl Into<u8>) {
-        self.chunk.write(byte, self.previous().span.line);
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn emit_byte(&mut self, byte: impl Into<u8>) {
+        unsafe {
+            self.chunk.write(byte, self.previous().span.line);
+        }
     }
 
-    fn emit_return(&mut self) {
-        self.emit_byte(OpCode::Return);
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn emit_return(&mut self) {
+        unsafe {
+            self.emit_byte(OpCode::Return);
+        }
     }
 
-    fn emit_bytes(&mut self, byte1: impl Into<u8>, byte2: impl Into<u8>) {
-        self.emit_byte(byte1);
-        self.emit_byte(byte2);
-    }
-
-    fn emit_constant(&mut self, value: Value) {
-        self.chunk.write_constant(value, self.previous().span.line);
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn emit_constant(&mut self, value: Value) {
+        unsafe {
+            self.chunk.write_constant(value, self.previous().span.line);
+        }
     }
 
     fn error_at(&mut self, token: Token, message: &str) {
@@ -143,9 +159,9 @@ impl<'a> Parser<'a> {
         if token.kind == TokenKind::Eof {
             eprint!(" at end");
         } else if matches!(token.kind, TokenKind::Error(_)) {
-            // Nothig.
+            // Nothing.
         } else {
-            eprint!(" at '{}'", token.slice(&self.source));
+            eprint!(" at '{}'", token.slice(self.source));
         }
 
         eprintln!(": {}", message);
@@ -153,98 +169,170 @@ impl<'a> Parser<'a> {
         self.panic_mode = true;
     }
 
-    fn error_at_current(&mut self, message: &str) {
-        self.error_at(*self.current(), message);
-    }
-
-    fn error(&mut self, message: &str) {
-        self.error_at(*self.previous(), message);
-    }
-
-    fn number(&mut self) {
-        let number = self
-            .previous()
-            .slice(self.source)
-            .parse::<Value>()
-            .expect("Error parsing a number");
-        self.emit_constant(number);
-    }
-
-    fn grouping(&mut self) {
-        self.expression();
-        self.consume(TokenKind::RightParen, "Expect ')' after expression.");
-    }
-
-    fn unary(&mut self) {
-        let operation_kind = self.previous().kind;
-
-        self.parse_precedence(Precedence::Unary);
-
-        match operation_kind {
-            TokenKind::Minus => self.emit_byte(OpCode::Negate),
-            _ => unreachable!(),
+    /// # Safety
+    ///
+    /// Requires that `current()` is valid (advance() has been called).
+    unsafe fn error_at_current(&mut self, message: &str) {
+        unsafe {
+            self.error_at(*self.current(), message);
         }
     }
 
-    fn binary(&mut self) {
-        let operation_kind = self.previous().kind;
-        let precedence: Precedence = operation_kind.into();
-        self.parse_precedence(precedence.one_higher());
-
-        match operation_kind {
-            TokenKind::Plus => self.emit_byte(OpCode::Add),
-            TokenKind::Minus => self.emit_byte(OpCode::Subtract),
-            TokenKind::Star => self.emit_byte(OpCode::Multiply),
-            TokenKind::Slash => self.emit_byte(OpCode::Divide),
-            _ => unreachable!(),
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn error(&mut self, message: &str) {
+        unsafe {
+            self.error_at(*self.previous(), message);
         }
     }
 
-    fn prefix(&mut self) {
-        match self.previous().kind {
-            TokenKind::LeftParen => self.grouping(),
-            TokenKind::Minus => self.unary(),
-            TokenKind::Number => self.number(),
-            _ => self.error("Expect expression."),
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn number(&mut self) {
+        unsafe {
+            let number = self
+                .previous()
+                .slice(self.source)
+                .parse::<Value>()
+                .expect("Error parsing a number");
+            self.emit_constant(number);
         }
     }
 
-    fn infix(&mut self) {
-        match self.previous().kind {
-            TokenKind::Minus | TokenKind::Plus | TokenKind::Star | TokenKind::Slash => {
-                self.binary()
+    /// # Safety
+    ///
+    /// Requires that tokens are initialized (advance() has been called twice).
+    unsafe fn grouping(&mut self) {
+        unsafe {
+            self.expression();
+            self.consume(TokenKind::RightParen, "Expect ')' after expression.");
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn unary(&mut self) {
+        unsafe {
+            let operation_kind = self.previous().kind;
+
+            self.parse_precedence(Precedence::Unary);
+
+            match operation_kind {
+                TokenKind::Minus => self.emit_byte(OpCode::Negate),
+                _ => unreachable!(),
             }
-            _ => self.error("Expect expression."),
         }
     }
 
-    fn parse_precedence(&mut self, precedence: Precedence) {
-        self.advance();
-        self.prefix();
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn binary(&mut self) {
+        unsafe {
+            let operation_kind = self.previous().kind;
+            let precedence: Precedence = operation_kind.into();
+            self.parse_precedence(precedence.one_higher());
 
-        while precedence <= self.current().kind.into() {
+            match operation_kind {
+                TokenKind::Plus => self.emit_byte(OpCode::Add),
+                TokenKind::Minus => self.emit_byte(OpCode::Subtract),
+                TokenKind::Star => self.emit_byte(OpCode::Multiply),
+                TokenKind::Slash => self.emit_byte(OpCode::Divide),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn prefix(&mut self) {
+        unsafe {
+            match self.previous().kind {
+                TokenKind::LeftParen => self.grouping(),
+                TokenKind::Minus => self.unary(),
+                TokenKind::Number => self.number(),
+                _ => self.error("Expect expression."),
+            }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn infix(&mut self) {
+        unsafe {
+            match self.previous().kind {
+                TokenKind::Minus | TokenKind::Plus | TokenKind::Star | TokenKind::Slash => {
+                    self.binary()
+                }
+                _ => self.error("Expect expression."),
+            }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Requires that `prefix()` is valid. This function calls `advance()` once before
+    /// `prefix()`. `prefix()` needs two calls to `advance()` to be valid, then, this
+    /// funciton needs `advance()` has been called to be valid.
+    unsafe fn parse_precedence(&mut self, precedence: Precedence) {
+        unsafe {
             self.advance();
-            self.infix();
+            self.prefix();
+
+            while precedence <= self.current().kind.into() {
+                self.advance();
+                self.infix();
+            }
         }
     }
 
+    /// Parse the source code and return the compiled chunk.
     pub fn parse(&mut self) -> Result<Chunk, ParserError> {
+        // This is the main entry point for parsing. It establishes the invariant
+        // that current and previous are initialized, then all internal unsafe
+        // functions can rely on this invariant.
+
+        // First call initializes `current`
         self.advance();
-        self.expression();
-        self.consume(TokenKind::Eof, "Expect end of expression.");
+
+        // SAFETY: advance() was called, so current is initialized. `previous()`
+        // calls `advance()` at least once more, thus stablishing the invariance
+        // that both current and previous are initialized.
+        unsafe {
+            self.expression();
+            self.consume(TokenKind::Eof, "Expect end of expression.");
+        }
 
         if !self.had_errors {
-            self.emit_return();
+            // SAFETY: advance() was called, invariant still holds
+            unsafe {
+                self.emit_return();
+            }
             return Ok(std::mem::replace(&mut self.chunk, Chunk::new()));
         }
 
         Err(ParserError)
     }
 
-    fn expression(&mut self) {
-        self.parse_precedence(Precedence::Assignment);
+    /// # Safety
+    ///
+    /// Requires that `parse_precedence()` is valid (advance() has been called).
+    unsafe fn expression(&mut self) {
+        unsafe {
+            self.parse_precedence(Precedence::Assignment);
+        }
     }
 
+    /// Advance to the next token.
+    ///
+    /// The first call to this function initializes the `current`, the second
+    /// call initializes `previous`. Thus, two calls to this function are needed
+    /// to stablish the invariant that both `current` and `previous` are initialized.
     pub fn advance(&mut self) {
         loop {
             match self.scanner.next() {
@@ -269,12 +357,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn consume(&mut self, kind: TokenKind, message: &str) {
-        if self.current().kind == kind {
-            self.advance();
-            return;
-        }
+    /// # Safety
+    ///
+    /// Requires that `current()` is valid (advance() has been called).
+    unsafe fn consume(&mut self, kind: TokenKind, message: &str) {
+        unsafe {
+            if self.current().kind == kind {
+                self.advance();
+                return;
+            }
 
-        self.error_at_current(message);
+            self.error_at_current(message);
+        }
     }
 }
