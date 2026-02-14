@@ -1,6 +1,7 @@
-#[derive(Debug)]
-pub struct Span<'a> {
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
     // pub col: usize,
     pub line: usize,
-    pub slice: &'a str,
+    pub start: usize,
+    pub lenth: usize,
 }

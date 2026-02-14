@@ -2,35 +2,8 @@ use std::error::Error;
 use std::fmt::Display;
 use std::process::exit;
 
-use crate::span::Span;
+use crate::parser::ParserError;
 use crate::stack::StackError;
-
-#[derive(Debug)]
-pub struct CompileError<'a> {
-    reason: &'static str,
-    span: Span<'a>,
-}
-
-impl<'a> Display for CompileError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[line {}] Error at ", self.span.line)?;
-        if self.span.slice.is_empty() {
-            write!(f, "end")?;
-        } else {
-            write!(f, "'{}'", self.span.slice)?;
-        }
-
-        write!(f, ": {}", self.reason)
-    }
-}
-
-impl<'a> Error for CompileError<'a> {}
-
-impl<'a> CompileError<'a> {
-    pub fn new(span: Span<'a>, reason: &'static str) -> Self {
-        Self { reason, span }
-    }
-}
 
 #[derive(Debug)]
 pub struct RuntimeError {
@@ -85,5 +58,11 @@ impl InterpretError {
             Self::Compile => exit(65),
             Self::Runtime => exit(70),
         }
+    }
+}
+
+impl From<ParserError> for InterpretError {
+    fn from(_value: ParserError) -> Self {
+        InterpretError::Compile
     }
 }

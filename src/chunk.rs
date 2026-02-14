@@ -16,6 +16,12 @@ pub enum OpCode {
     Negate,
 }
 
+impl From<OpCode> for u8 {
+    fn from(value: OpCode) -> Self {
+        value as u8
+    }
+}
+
 pub enum Instruction {
     Return,
     Constant(Value),
@@ -42,8 +48,8 @@ impl Chunk {
         }
     }
 
-    pub fn write(&mut self, byte: u8, line: usize) {
-        self.instructions.push(byte);
+    pub fn write(&mut self, byte: impl Into<u8>, line: usize) {
+        self.instructions.push(byte.into());
         if let Some((last_line, count)) = self.lines.last_mut()
             && line == *last_line
         {
@@ -157,8 +163,8 @@ impl<'a> Chunk {
     }
 }
 
-#[cfg(feature = "tracing")]
-mod tracing {
+#[cfg(feature = "debug")]
+mod debug {
     use super::*;
 
     impl Chunk {
@@ -209,7 +215,7 @@ mod tracing {
             None
         }
 
-        pub fn _disassemble(&self, name: &str) {
+        pub fn disassemble(&self, name: &str) {
             println!("== {} ==", name);
 
             let mut iter = self.instructions.iter().enumerate();

@@ -58,7 +58,7 @@ impl<'a> Vm<'a> {
 
     pub fn run(&mut self) -> Result<(), InterpretError> {
         while self.ip.has_next() {
-            #[cfg(feature = "tracing")]
+            #[cfg(feature = "debug-trace-execution")]
             {
                 println!("          \n{:?}", self.stack);
                 self.ip.disassemble_instruction();

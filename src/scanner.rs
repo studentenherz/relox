@@ -1,15 +1,15 @@
 use std::str::Chars;
 
-use crate::errors::CompileError;
 use crate::span::Span;
 use macros::DebugC;
 
-pub struct Token<'a> {
+#[derive(Clone, Copy)]
+pub struct Token {
     pub kind: TokenKind,
-    pub span: Span<'a>,
+    pub span: Span,
 }
 
-#[derive(DebugC)]
+#[derive(DebugC, PartialEq, Clone, Copy)]
 #[prefix = "TOKEN"]
 pub enum TokenKind {
     // Singe-character tokens
@@ -63,13 +63,13 @@ pub enum TokenKind {
     MultiLineComment,
     Whitespace,
 
-    Unknown,
+    Error(&'static str),
+    Eof,
 }
 
 const EOF_CHAR: char = '\0';
 
 pub struct Scanner<'a> {
-    input: &'a str,
     iter: Chars<'a>,
     line: usize,
     prev: char,
@@ -85,7 +85,6 @@ impl<'a> Scanner<'a> {
     pub fn new(input: &'a str) -> Self {
         let iter = input.chars();
         Self {
-            input,
             iter,
             prev: EOF_CHAR,
             line: 1,
@@ -137,16 +136,27 @@ impl<'a> Scanner<'a> {
         false
     }
 
-    fn span(&self) -> Span<'a> {
+    fn span(&self) -> Span {
         Span {
             // col: self.start_col,
-            line: self.start_line,
-            slice: &self.input[self.start_pos..self.pos],
+            line: self.line,
+            start: self.start_pos,
+            lenth: self.pos - self.start_pos,
         }
     }
 
-    fn error(&self, reason: &'static str) -> CompileError<'a> {
-        CompileError::new(self.span(), reason)
+    fn error(&self, reason: &'static str) -> Token {
+        Token {
+            kind: TokenKind::Error(reason),
+            span: self.span(),
+        }
+    }
+
+    pub fn eof(&self) -> Token {
+        Token {
+            kind: TokenKind::Eof,
+            span: self.span(),
+        }
     }
 
     fn is_alpha(c: char) -> bool {
@@ -157,7 +167,7 @@ impl<'a> Scanner<'a> {
         Self::is_alpha(c) || c.is_ascii_digit()
     }
 
-    fn comment_or_slash(&mut self) -> Result<TokenKind, CompileError<'a>> {
+    fn comment_or_slash(&mut self) -> Result<TokenKind, Token> {
         if self.second_matches('/') {
             self.bump();
             self.bump();
@@ -289,7 +299,7 @@ impl<'a> Scanner<'a> {
         TokenKind::Number
     }
 
-    fn string(&mut self) -> Result<TokenKind, CompileError<'a>> {
+    fn string(&mut self) -> Result<TokenKind, Token> {
         self.bump();
         let mut escaped = false;
         self.eat_while(move |c| {
@@ -315,7 +325,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn advance_token(&mut self, first_char: char) -> Result<Token<'a>, CompileError<'a>> {
+    fn advance_token(&mut self, first_char: char) -> Result<Token, Token> {
         self.start_pos = self.pos;
         self.start_col = self.col;
         self.start_line = self.line;
@@ -363,11 +373,11 @@ impl<'a> Scanner<'a> {
                     TokenKind::Greater
                 }
             }
-            _ => TokenKind::Unknown,
+            _ => TokenKind::Error("Unknown token."),
         };
 
         let token_kind = match token {
-            TokenKind::Unknown => match first_char {
+            TokenKind::Error(_) => match first_char {
                 '"' => self.string()?,
                 '/' => self.comment_or_slash()?,
                 c if c.is_ascii_digit() => self.number(),
@@ -378,7 +388,7 @@ impl<'a> Scanner<'a> {
                 }
                 _ => {
                     self.bump();
-                    TokenKind::Unknown
+                    token
                 }
             },
             _ => {
@@ -394,8 +404,8 @@ impl<'a> Scanner<'a> {
     }
 }
 
-impl<'a> Iterator for Scanner<'a> {
-    type Item = Result<Token<'a>, CompileError<'a>>;
+impl Iterator for Scanner<'_> {
+    type Item = Token;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.peek_first() {
@@ -413,9 +423,18 @@ impl<'a> Iterator for Scanner<'a> {
                     {
                         continue;
                     }
-                    return Some(token_result);
+                    return Some(match token_result {
+                        Ok(token) => token,
+                        Err(token) => token,
+                    });
                 }
             }
         }
+    }
+}
+
+impl<'a> Token {
+    pub fn slice(&self, source: &'a str) -> &'a str {
+        &source[self.span.start..(self.span.start + self.span.lenth)]
     }
 }
