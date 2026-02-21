@@ -201,7 +201,7 @@ mod debug {
                 _ => unreachable!(),
             };
             let value = &self.constants[index];
-            println!("{:<16?} {:>4} '{}'", opcode, index, value);
+            println!("{:<16?} {:>4} '{:?}'", opcode, index, value);
         }
 
         pub fn disassemble_instruction<'a>(

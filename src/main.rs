@@ -9,11 +9,13 @@ mod chunk;
 mod compiler;
 mod errors;
 mod interpreter;
+mod objects;
 mod parser;
 mod repl;
 mod scanner;
 mod span;
 mod stack;
+mod strings;
 mod value;
 mod vm;
 

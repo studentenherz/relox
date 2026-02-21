@@ -1,5 +1,6 @@
 use crate::chunk::{Chunk, ChunkIter, Instruction};
 use crate::errors::{InterpretError, RuntimeError};
+use crate::objects::LoxObject;
 use crate::stack::Stack;
 use crate::value::Value;
 
@@ -31,7 +32,30 @@ impl<'a> Vm<'a> {
             Instruction::Greater => self.try_run_comparison_op(|left, right| left > right)?,
             Instruction::Less => self.try_run_comparison_op(|left, right| left < right)?,
 
-            Instruction::Add => self.try_run_arithmetic_op(|left, right| left + right)?,
+            Instruction::Add => {
+                let right = self.stack.pop()?;
+                let left = self.stack.pop()?;
+
+                match (left, right) {
+                    (Value::Object(left), Value::Object(right)) => {
+                        match (left.as_ref(), right.as_ref()) {
+                            (LoxObject::String(left), LoxObject::String(right)) => {
+                                let mut new_string = String::from(left);
+                                new_string.push_str(right);
+                                self.stack.push(Value::string(new_string))?;
+                            }
+                        }
+                    }
+                    (Value::Number(left), Value::Number(right)) => {
+                        self.stack.push(Value::Number(left + right))?;
+                    }
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "Operands must be two numbers or two strings.",
+                        ));
+                    }
+                }
+            }
             Instruction::Subtract => self.try_run_arithmetic_op(|left, right| left - right)?,
             Instruction::Multiply => self.try_run_arithmetic_op(|left, right| left * right)?,
             Instruction::Divide => self.try_run_arithmetic_op(|left, right| left / right)?,

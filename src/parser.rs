@@ -2,6 +2,7 @@ use std::mem::MaybeUninit;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::scanner::{Scanner, Token, TokenKind};
+use crate::span::Span;
 use crate::value::Value;
 
 #[derive(PartialEq, PartialOrd)]
@@ -213,6 +214,20 @@ impl<'a> Parser<'a> {
 
     /// # Safety
     ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn string(&mut self) {
+        unsafe {
+            let &Token {
+                span: Span { start, lenth, .. },
+                ..
+            } = self.previous();
+            let value = String::from(&self.source[(start + 1)..(start + lenth - 1)]);
+            self.emit_constant(Value::string(value));
+        }
+    }
+
+    /// # Safety
+    ///
     /// Requires that tokens are initialized (advance() has been called twice).
     unsafe fn grouping(&mut self) {
         unsafe {
@@ -272,10 +287,14 @@ impl<'a> Parser<'a> {
                 TokenKind::LeftParen => self.grouping(),
                 TokenKind::Minus | TokenKind::Bang => self.unary(),
                 TokenKind::Number => self.number(),
+
                 // Literals
                 TokenKind::False => self.emit_byte(OpCode::False),
                 TokenKind::Nil => self.emit_byte(OpCode::Nil),
                 TokenKind::True => self.emit_byte(OpCode::True),
+
+                TokenKind::String => self.string(),
+
                 _ => self.error("Expect expression."),
             }
         }
