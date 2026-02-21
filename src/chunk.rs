@@ -9,10 +9,17 @@ pub enum OpCode {
     Return,
     Constant,
     ConstantLong,
+    Nil,
+    True,
+    False,
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
     Divide,
+    Not,
     Negate,
 }
 
@@ -25,10 +32,14 @@ impl From<OpCode> for u8 {
 pub enum Instruction {
     Return,
     Constant(Value),
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
     Divide,
+    Not,
     Negate,
     Unknown(u8),
 }
@@ -123,16 +134,23 @@ impl<'a> Iterator for ChunkIter<'a> {
             Ok(OpCode::Return) => Instruction::Return,
             Ok(OpCode::Constant) => {
                 let index = Chunk::read_bytes::<1>(&mut self.inner);
-                Instruction::Constant(self.chunk.constants[index])
+                Instruction::Constant(self.chunk.constants[index].clone())
             }
             Ok(OpCode::ConstantLong) => {
                 let index = Chunk::read_bytes::<3>(&mut self.inner);
-                Instruction::Constant(self.chunk.constants[index])
+                Instruction::Constant(self.chunk.constants[index].clone())
             }
+            Ok(OpCode::Nil) => Instruction::Constant(Value::Nil),
+            Ok(OpCode::True) => Instruction::Constant(Value::Boolean(true)),
+            Ok(OpCode::False) => Instruction::Constant(Value::Boolean(false)),
+            Ok(OpCode::Equal) => Instruction::Equal,
+            Ok(OpCode::Greater) => Instruction::Greater,
+            Ok(OpCode::Less) => Instruction::Less,
             Ok(OpCode::Add) => Instruction::Add,
             Ok(OpCode::Subtract) => Instruction::Subtract,
             Ok(OpCode::Multiply) => Instruction::Multiply,
             Ok(OpCode::Divide) => Instruction::Divide,
+            Ok(OpCode::Not) => Instruction::Not,
             Ok(OpCode::Negate) => Instruction::Negate,
             Err(_) => Instruction::Unknown(byte),
         };
@@ -182,7 +200,7 @@ mod debug {
                 OpCode::ConstantLong => Self::read_bytes::<3>(iter),
                 _ => unreachable!(),
             };
-            let value = self.constants[index];
+            let value = &self.constants[index];
             println!("{:<16?} {:>4} '{}'", opcode, index, value);
         }
 

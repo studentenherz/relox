@@ -13,10 +13,12 @@ pub struct RuntimeError {
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.reason)?;
         if let Some(line) = self.line {
-            write!(f, "[line {}] ", line)?;
+            writeln!(f, "[line {}] in script", line)?;
         }
-        write!(f, "Error: {}", self.reason)
+
+        Ok(())
     }
 }
 
@@ -30,11 +32,9 @@ impl RuntimeError {
         }
     }
 
-    pub fn with_line(self, line: usize) -> Self {
-        Self {
-            line: Some(line),
-            ..self
-        }
+    pub fn with_line(&mut self, line: usize) -> &mut Self {
+        self.line = Some(line);
+        self
     }
 }
 

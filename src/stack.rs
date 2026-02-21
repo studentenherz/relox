@@ -49,7 +49,15 @@ impl<T, const C: usize> Stack<T, C> {
         }
     }
 
-    pub fn top(&mut self) -> Result<&mut T, StackError> {
+    pub fn top(&self) -> Result<&T, StackError> {
+        if self.size > 0 {
+            Ok(unsafe { self.data[self.size - 1].assume_init_ref() })
+        } else {
+            Err(StackError::Undeflow)
+        }
+    }
+
+    pub fn top_mut(&mut self) -> Result<&mut T, StackError> {
         if self.size > 0 {
             Ok(unsafe { self.data[self.size - 1].assume_init_mut() })
         } else {

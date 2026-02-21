@@ -20,16 +20,6 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn run_binary_operation(&mut self, op: fn(Value, Value) -> Value) -> RuntimeResult<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
-
-        let result = op(left, right);
-        self.stack.push(result)?;
-
-        Ok(())
-    }
-
     fn run_instruction(&mut self, instruction: Instruction) -> RuntimeResult<()> {
         match instruction {
             Instruction::Return => {
@@ -37,16 +27,24 @@ impl<'a> Vm<'a> {
                 println!("{}", value);
                 return Ok(());
             }
-            Instruction::Add => self.run_binary_operation(|left, right| left + right)?,
-            Instruction::Subtract => self.run_binary_operation(|left, right| left - right)?,
-            Instruction::Multiply => self.run_binary_operation(|left, right| left * right)?,
-            Instruction::Divide => self.run_binary_operation(|left, right| left / right)?,
-            Instruction::Constant(value) => {
-                self.stack.push(value)?;
+            Instruction::Equal => self.try_run_equal_op()?,
+            Instruction::Greater => self.try_run_comparison_op(|left, right| left > right)?,
+            Instruction::Less => self.try_run_comparison_op(|left, right| left < right)?,
+
+            Instruction::Add => self.try_run_arithmetic_op(|left, right| left + right)?,
+            Instruction::Subtract => self.try_run_arithmetic_op(|left, right| left - right)?,
+            Instruction::Multiply => self.try_run_arithmetic_op(|left, right| left * right)?,
+            Instruction::Divide => self.try_run_arithmetic_op(|left, right| left / right)?,
+            Instruction::Constant(value) => self.stack.push(value)?,
+            Instruction::Not => {
+                let value = self.stack.top()?;
+                let not = Value::Boolean(!(bool::from(value)));
+                let value = self.stack.top_mut()?;
+                *value = not;
             }
             Instruction::Negate => {
-                let value = self.stack.top()?;
-                *value = -*value;
+                let value = self.stack.top_mut()?;
+                Self::try_negate(value)?;
             }
             Instruction::Unknown(byte) => {
                 return Err(RuntimeError::new(format!("Unknown opcode {}", byte)));
@@ -66,10 +64,58 @@ impl<'a> Vm<'a> {
 
             let instruction = unsafe { self.ip.next().unwrap_unchecked() };
 
-            if let Err(err) = self.run_instruction(instruction) {
+            if let Err(mut err) = self.run_instruction(instruction) {
                 eprintln!("{}", err.with_line(self.ip.line()));
                 return Err(InterpretError::Runtime);
             }
+        }
+
+        Ok(())
+    }
+
+    fn try_run_arithmetic_op(&mut self, op: fn(f64, f64) -> f64) -> RuntimeResult<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        match (left, right) {
+            (Value::Number(left), Value::Number(right)) => {
+                let result = op(left, right);
+                self.stack.push(Value::Number(result))?;
+            }
+            _ => return Err(RuntimeError::new("Operands must be numbers.")),
+        }
+
+        Ok(())
+    }
+
+    fn try_run_comparison_op(&mut self, op: fn(f64, f64) -> bool) -> RuntimeResult<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        match (left, right) {
+            (Value::Number(left), Value::Number(right)) => {
+                let result = op(left, right);
+                self.stack.push(Value::Boolean(result))?;
+            }
+            _ => return Err(RuntimeError::new("Operands must be numbers.")),
+        }
+
+        Ok(())
+    }
+
+    fn try_run_equal_op(&mut self) -> RuntimeResult<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        self.stack.push(Value::Boolean(left == right))?;
+
+        Ok(())
+    }
+
+    fn try_negate(value: &mut Value) -> RuntimeResult<()> {
+        match value {
+            Value::Number(number) => *number = -*number,
+            _ => return Err(RuntimeError::new("Operand must be a number.")),
         }
 
         Ok(())

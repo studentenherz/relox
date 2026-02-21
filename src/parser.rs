@@ -51,13 +51,13 @@ impl From<TokenKind> for Precedence {
             TokenKind::Slash => Self::Factor,
             TokenKind::Star => Self::Factor,
             TokenKind::Bang => Self::None,
-            TokenKind::BangEqual => Self::None,
+            TokenKind::BangEqual => Self::Equality,
             TokenKind::Equal => Self::None,
-            TokenKind::EqualEqual => Self::None,
-            TokenKind::Greater => Self::None,
-            TokenKind::GreaterEqual => Self::None,
-            TokenKind::Less => Self::None,
-            TokenKind::LessEqual => Self::None,
+            TokenKind::EqualEqual => Self::Equality,
+            TokenKind::Greater => Self::Comparison,
+            TokenKind::GreaterEqual => Self::Comparison,
+            TokenKind::Less => Self::Comparison,
+            TokenKind::LessEqual => Self::Comparison,
             TokenKind::Ident => Self::None,
             TokenKind::String => Self::None,
             TokenKind::Number => Self::None,
@@ -138,6 +138,16 @@ impl<'a> Parser<'a> {
     /// # Safety
     ///
     /// Requires that `previous()` is valid (advance() has been called twice).
+    unsafe fn emit_bytes(&mut self, byte1: impl Into<u8>, byte2: impl Into<u8>) {
+        unsafe {
+            self.chunk.write(byte1, self.previous().span.line);
+            self.chunk.write(byte2, self.previous().span.line);
+        }
+    }
+
+    /// # Safety
+    ///
+    /// Requires that `previous()` is valid (advance() has been called twice).
     unsafe fn emit_return(&mut self) {
         unsafe {
             self.emit_byte(OpCode::Return);
@@ -195,9 +205,9 @@ impl<'a> Parser<'a> {
             let number = self
                 .previous()
                 .slice(self.source)
-                .parse::<Value>()
+                .parse::<f64>()
                 .expect("Error parsing a number");
-            self.emit_constant(number);
+            self.emit_constant(Value::Number(number));
         }
     }
 
@@ -222,6 +232,7 @@ impl<'a> Parser<'a> {
 
             match operation_kind {
                 TokenKind::Minus => self.emit_byte(OpCode::Negate),
+                TokenKind::Bang => self.emit_byte(OpCode::Not),
                 _ => unreachable!(),
             }
         }
@@ -237,6 +248,12 @@ impl<'a> Parser<'a> {
             self.parse_precedence(precedence.one_higher());
 
             match operation_kind {
+                TokenKind::BangEqual => self.emit_bytes(OpCode::Equal, OpCode::Not),
+                TokenKind::EqualEqual => self.emit_byte(OpCode::Equal),
+                TokenKind::Greater => self.emit_byte(OpCode::Greater),
+                TokenKind::GreaterEqual => self.emit_bytes(OpCode::Less, OpCode::Not),
+                TokenKind::Less => self.emit_byte(OpCode::Less),
+                TokenKind::LessEqual => self.emit_bytes(OpCode::Greater, OpCode::Not),
                 TokenKind::Plus => self.emit_byte(OpCode::Add),
                 TokenKind::Minus => self.emit_byte(OpCode::Subtract),
                 TokenKind::Star => self.emit_byte(OpCode::Multiply),
@@ -253,8 +270,12 @@ impl<'a> Parser<'a> {
         unsafe {
             match self.previous().kind {
                 TokenKind::LeftParen => self.grouping(),
-                TokenKind::Minus => self.unary(),
+                TokenKind::Minus | TokenKind::Bang => self.unary(),
                 TokenKind::Number => self.number(),
+                // Literals
+                TokenKind::False => self.emit_byte(OpCode::False),
+                TokenKind::Nil => self.emit_byte(OpCode::Nil),
+                TokenKind::True => self.emit_byte(OpCode::True),
                 _ => self.error("Expect expression."),
             }
         }
@@ -266,9 +287,16 @@ impl<'a> Parser<'a> {
     unsafe fn infix(&mut self) {
         unsafe {
             match self.previous().kind {
-                TokenKind::Minus | TokenKind::Plus | TokenKind::Star | TokenKind::Slash => {
-                    self.binary()
-                }
+                TokenKind::BangEqual
+                | TokenKind::EqualEqual
+                | TokenKind::Greater
+                | TokenKind::GreaterEqual
+                | TokenKind::Less
+                | TokenKind::LessEqual
+                | TokenKind::Minus
+                | TokenKind::Plus
+                | TokenKind::Star
+                | TokenKind::Slash => self.binary(),
                 _ => self.error("Expect expression."),
             }
         }
